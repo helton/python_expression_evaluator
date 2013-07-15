@@ -32,26 +32,26 @@ class Lexer:
     def __init__(self, expression):
         self.expression = expression
 
-    def finish(self):
+    def finished(self):
         return self.index >= len(self.expression)
 
     def get_char(self):
-        if not self.finish():
+        if not self.finished():
             self.index += 1
             return self.expression[self.index - 1]
         return None
 
     def peek(self):
-        if not self.finish():
+        if not self.finished():
             return self.expression[self.index]
 
     def skip_spaces(self):
-        while not self.finish() and self.expression[self.index] == ' ':
+        while not self.finished() and self.expression[self.index] == ' ':
             self.index += 1
 
     def read_number(self):
         lexeme = ""
-        while not self.finish():
+        while not self.finished():
             c = self.peek()
             if (lexeme + c).isnumeric():
                 lexeme += self.get_char()
@@ -61,7 +61,7 @@ class Lexer:
             return Token(Token.NUMBER, lexeme, float(lexeme))
 
     def read_symbol(self):
-        if not self.finish() and self.peek() in self.symbols:
+        if not self.finished() and self.peek() in self.symbols:
             lexeme = self.get_char()
             if lexeme == '+':
                 return Token(Token.PLUS, lexeme)
@@ -78,8 +78,8 @@ class Lexer:
 
     def tokenize(self):
         self.tokens.clear()
-        while not self.finish():
-            self.skip_spaces()
+        while not self.finished():
+            self.skip_spaces() # Is self.expression = ''.join(self.expression.split(' ')) better?
             token = self.read_number()
             if token:
                 self.tokens.append(token)
@@ -99,11 +99,10 @@ class Parser:
         F -> '(' E ')' | digit | identifier
     """
 
+    tokens = []
     stack = []
     result = 0.0
-    tokens = []
     index = 0
-    finish = False
     token = None
 
     def evaluate(self, expression):
@@ -122,11 +121,11 @@ class Parser:
     def token_is(self, *token_types):
         return self.token.token_type in list(token_types)
 
-    def finish(self):
+    def finished(self):
         return self.index >= len(self.tokens)
 
     def next_token(self):
-        if not self.finish():
+        if not self.finished():
             self.index += 1
             return self.tokens[self.index - 1]
 
@@ -160,7 +159,7 @@ class Parser:
         self.T()
         if negate:
             self.stack.append(-self.stack.pop())
-        while not self.finish() and self.token_is(Token.PLUS, Token.MINUS):
+        while not self.finished() and self.token_is(Token.PLUS, Token.MINUS):
             operator = self.token.token_type
             self.match(operator)
             self.T()
@@ -169,7 +168,7 @@ class Parser:
     def T(self):
         """T -> F { (*|/) F }"""
         self.F()
-        while not self.finish() and self.token_is(Token.TIMES, Token.DIVIDE):
+        while not self.finished() and self.token_is(Token.TIMES, Token.DIVIDE):
             operator = self.token.token_type
             self.match(operator)
             self.F()
