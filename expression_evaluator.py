@@ -154,8 +154,7 @@ def python_eval(expression, variables):
     variables.update({"pi": math.pi, "e": math.e})
     expression = ''.join(expression.split())
     if variables:
-        # Need sorted by len (in reverse order) to replace variables with name is "in" other
-        for key, value in sorted(variables.items(), key=lambda item: len(item[0]), reverse=True):
+        for key, value in variables.items():
             expression = re.sub('\\b'+key+'\\b', str(value), expression)
     return float(eval(expression))
 
