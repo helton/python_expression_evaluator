@@ -1,189 +1,109 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+
+
+import collections
 import math
+import re
 
 
-class Token:
+token_patterns = [
+    ('NUMBER',      r'[0-9]*\.?[0-9]+(e[-+]?[0-9]+)?'),
+    ('IDENTIFIER',  r'\w(\w|_|\d)*'),
+    ('LEFT_PAREN',  r'\('),
+    ('RIGHT_PAREN', r'\)'),
+    ('OP_PLUS',     r'\+'),
+    ('OP_MINUS',    r'\-'),
+    ('OP_TIMES',    r'\*'),
+    ('OP_DIVIDE',   r'/'),
+    ('NEWLINE',     r'\n'),
+    ('SKIP',        r'[ \t]'),
+]
 
-    # Start in 1 because 0 is a boolean value evaluated to False
-    (ID, NUMBER, PLUS, MINUS, TIMES, DIVIDE, LEFT_PAREN, RIGHT_PAREN) = range(1, 9)
+pattern = '|'.join('(?P<%s>%s)' % pair for pair in token_patterns)
 
-    dict_token_type = {
-        ID: "identifier",
-        NUMBER: "number",
-        PLUS: "'+'",
-        MINUS: "'-'",
-        TIMES: "'*'",
-        DIVIDE: "'/'",
-        LEFT_PAREN: "'('",
-        RIGHT_PAREN: "')'"
-    }
-
-    @classmethod
-    def token_type_to_string(self, *token_types):
-        return ', '.join([self.dict_token_type[tt] for tt in token_types])
-
-    def __init__(self, token_type, lexeme, lexeme_value=None):
-        self.token_type = token_type
-        self.lexeme = lexeme
-        self.lexeme_value = lexeme_value
-
-    def __repr__(self):
-        return ("Token type: %8s | Lexeme = %s | Lexeme value = %s" %
-                (str(self.token_type_to_string(self.token_type)), self.lexeme, str(self.lexeme_value)))
+Token = collections.namedtuple('Token', 'type value line column')
 
 
-class Lexer:
-
-    tokens = []
-    index = 0
-    symbols = '+-*/()'
+class EvalLexer(object):
 
     def __init__(self, expression):
-        self.expression = ''.join(expression.split())
+        self.expression = expression
 
-    def clear(self):
-        self.tokens = []
-        self.index = 0
-
-    def finished(self):
-        return self.index >= len(self.expression)
-
-    def get_char(self):
-        if not self.finished():
-            self.index += 1
-            return self.expression[self.index - 1]
-        return None
-
-    def peek(self):
-        if not self.finished():
-            return self.expression[self.index]
-
-    def skip_spaces(self):
-        while not self.finished() and self.expression[self.index].isspace():
-            self.index += 1
-
-    def read_number(self):
-        lexeme = ""
-        while not self.finished():
-            c = self.peek()
-            if (lexeme + c).isnumeric():
-                lexeme += self.get_char()
-            else:
-                break
-        if lexeme:
-            return Token(Token.NUMBER, lexeme, float(lexeme))
-
-    def read_symbol(self):
-        if not self.finished() and self.peek() in self.symbols:
-            lexeme = self.get_char()
-            if lexeme == '+':
-                return Token(Token.PLUS, lexeme)
-            elif lexeme == '-':
-                return Token(Token.MINUS, lexeme)
-            elif lexeme == '*':
-                return Token(Token.TIMES, lexeme)
-            elif lexeme == '/':
-                return Token(Token.DIVIDE, lexeme)
-            elif lexeme == '(':
-                return Token(Token.LEFT_PAREN, lexeme)
-            elif lexeme == ')':
-                return Token(Token.RIGHT_PAREN, lexeme)
-
-    def read_identifier(self):
-        lexeme = ""
-        while not self.finished():
-            c = self.peek()
-            if (lexeme + c).isidentifier():
-                lexeme += self.get_char()
-            else:
-                break
-        if lexeme:
-            return Token(Token.ID, lexeme, lexeme)
-
-    def tokenize(self):
-        self.clear()
-        while not self.finished():
-            self.skip_spaces()
-            token = self.read_number()
-            if token:
-                self.tokens.append(token)
-            token = self.read_symbol()
-            if token:
-                self.tokens.append(token)
-            token = self.read_identifier()
-            if token:
-                self.tokens.append(token)
-        return self.tokens
+    def tokenizer(self):
+        line = 1
+        column = line_start = 0
+        next_token = re.compile(pattern, re.IGNORECASE).match
+        token = next_token(self.expression)
+        while token:
+            token_type = token.lastgroup
+            if token_type == 'NEWLINE':
+                line_start = column
+                line += 1
+            elif token_type != 'SKIP':
+                token_value = token.group(token_type)
+                yield Token(token_type, token_value, line, token.start()-line_start)
+            column = token.end()
+            token = next_token(self.expression, column)
+        if column != len(self.expression):
+            raise RuntimeError('Syntax error: Unexpected character %r on line %d' % (self.expression[column], line))
 
 
-class Parser:
-    """
-        Parse the expression as input
+class EvalParser(object):
 
-        Grammar in EBNF [Extended Backus-Naur Form]:
-        E -> [-] T { (+|-) T }
-        T -> F { (*|/) F }
-        F -> '(' E ')' | digit | identifier
-    """
-
-    variables = {}
-    tokens = []
-    stack = []
-    result = 0.0
-    token = None
-    index = 0
-
-    def clear(self):
-        self.result = 0.0
-        self.index = 0
-        self.token = None
+    def __init__(self,):
         self.stack = []
-        self.tokens = []
         self.variables = {"pi": math.pi, "e": math.e}
 
-    def evaluate(self, expression, variables={}):
-        self.clear()
-        self.expression = ''.join(expression.split())
+    def next_token(self):
+        try:
+            return next(self.tokenizer)
+        except StopIteration:
+            pass
+
+    def print_tokens(self):
+        line_format = "| %11s | %30s | %6s | %6s |"
+        separator = '=' * 66
+        print('Tokenizing...')
+        print(separator)
+        print(line_format % ('TYPE', 'VALUE', 'LINE', 'COLUMN'))
+        print(separator)
+        self.tokenizer = self.lexer.tokenizer()
+        for token in self.tokenizer:
+            print(line_format % token)
+        print(separator)
+
+    def evaluate(self, expression, variables=None, print_tokens=False):
         self.variables.update(variables)
-        self.lexer = Lexer(expression)
-        self.tokens = self.lexer.tokenize()
+        self.lexer = EvalLexer(expression)
+        if print_tokens:
+            self.print_tokens()
+        self.tokenizer = self.lexer.tokenizer()
         self.token = self.next_token()
         self.E()
         self.result = self.stack.pop()
         return self.result
 
-    def print_tokens(self):
-        for token in self.tokens:
-            print(token)
-
     def token_is(self, *token_types):
-        if not self.token:
-            raise ValueError('Syntax error: Unexpected end of expression.')
-        return self.token.token_type in list(token_types)
-
-    def finished(self):
-        return self.index >= len(self.tokens)
-
-    def next_token(self):
-        if not self.finished():
-            self.index += 1
-            return self.tokens[self.index - 1]
+        if self.token:
+            return self.token.type in list(token_types)
 
     def match(self, token_type_expected):
         if not self.token_is(token_type_expected):
-            raise ValueError('Syntax error: expected %s but got %s' % (Token.token_type_to_string(token_type_expected), Token.token_type_to_string(self.token.token_type)))
+            raise ValueError('Syntax error: expected %s but got %s' % (token_type_expected), self.token.type)
         else:
             self.token = self.next_token()
 
     def evaluate_and_push(self, token_type):
         right_value = self.stack.pop()
         left_value = self.stack.pop()
-        if token_type == Token.PLUS:
+        if token_type == 'OP_PLUS':
             self.stack.append(left_value + right_value)
-        elif token_type == Token.MINUS:
+        elif token_type == 'OP_MINUS':
             self.stack.append(left_value - right_value)
-        elif token_type == Token.TIMES:
+        elif token_type == 'OP_TIMES':
             self.stack.append(left_value * right_value)
-        elif token_type == Token.DIVIDE:
+        elif token_type == 'OP_DIVIDE':
             if right_value == 0:
                 raise ValueError("Semantic error: Division by zero")
             else:
@@ -191,14 +111,14 @@ class Parser:
 
     def E(self):
         """E -> [-] T { (+|-) T }"""
-        negate = self.token_is(Token.MINUS)
+        negate = self.token_is('OP_MINUS')
         if negate:
-            self.match(Token.MINUS)
+            self.match('OP_MINUS')
         self.T()
         if negate:
-            self.stack.append(-self.stack.pop())
-        while not self.finished() and self.token_is(Token.PLUS, Token.MINUS):
-            operator = self.token.token_type
+            self.stack.append(-float(self.stack.pop()))
+        while self.token_is('OP_PLUS', 'OP_MINUS'):
+            operator = self.token.type
             self.match(operator)
             self.T()
             self.evaluate_and_push(operator)
@@ -206,27 +126,24 @@ class Parser:
     def T(self):
         """T -> F { (*|/) F }"""
         self.F()
-        while not self.finished() and self.token_is(Token.TIMES, Token.DIVIDE):
-            operator = self.token.token_type
+        while self.token_is('OP_TIMES', 'OP_DIVIDE'):
+            operator = self.token.type
             self.match(operator)
             self.F()
             self.evaluate_and_push(operator)
 
     def F(self):
         """F -> '(' E ')' | digit | identifier"""
-        if self.token_is(Token.LEFT_PAREN):
-            self.match(Token.LEFT_PAREN)
+        if self.token_is('LEFT_PAREN'):
+            self.match('LEFT_PAREN')
             self.E()
-            self.match(Token.RIGHT_PAREN)
-        elif self.token_is(Token.NUMBER):
-            self.stack.append(self.token.lexeme_value)
-            self.match(Token.NUMBER)
-        elif self.token_is(Token.ID):
-            self.stack.append(self.variables[self.token.lexeme_value])
-            self.match(Token.ID)
-
-    def print_result(self):
-        print("%s = %.2f" % (self.expression, self.result))
+            self.match('RIGHT_PAREN')
+        elif self.token_is('NUMBER'):
+            self.stack.append(float(self.token.value))
+            self.match('NUMBER')
+        elif self.token_is('IDENTIFIER'):
+            self.stack.append(float(self.variables[self.token.value]))
+            self.match('IDENTIFIER')
 
 # ------------------------ Tests --------------------------------#
 
@@ -237,9 +154,9 @@ def python_eval(expression, variables):
     variables.update({"pi": math.pi, "e": math.e})
     expression = ''.join(expression.split())
     if variables:
-        # Need sorted by length (in reverse order) to replace variables whose name is "inside" others
+        # Need sorted by len (in reverse order) to replace variables with name is "in" other
         for key, value in sorted(variables.items(), key=lambda item: len(item[0]), reverse=True):
-            expression = expression.replace(key, str(value))
+            expression = re.sub('\\b'+key+'\\b', str(value), expression)
     return float(eval(expression))
 
 
@@ -247,7 +164,8 @@ def test(expression, variables={}):
     """
         Test if expected value is equal to the evaluated value
     """
-    returned = Parser().evaluate(expression, variables)
+    parser = EvalParser()
+    returned = parser.evaluate(expression, variables, True)
     expected = python_eval(expression, variables)
     if returned == expected:
         prefix = 'OK'
@@ -266,17 +184,20 @@ def run():
     test('2 + (((3 - 2)) * 7)')
     test('6 / (2 - 4 * 2) / 12 + 5 - ((0)-1)')
     test('9 * 3 / 5213 / 2134 - 29837 - (23-897 / (324+32 - (2972/9724) + 3) - 87)')
-    test('1 + 2 - (2 + 2)')
-    test('A + B / 2 - 9 * A + 14 * B', {"A": 9, "B": 10})
+    test('1.29837643298+ 2.12332 - (2 + 2)')
+    test('A + B / 2 - 9 * A + 14.23984 * B', {"A": 9, "B": 10})
     test('a12C + e * 2  - b435 / pi - 9 * e - cde + 14 * fg123', {"a12C": 19.23, "b435": 29.123, "cde": -902.12, "fg123": 82.482})
-    test("""1 +
-            3 /
-            4 - 9 * (3 - 2)
+    test('92837 + 23e84 - 349.12 - (1 + 2.5)')
+    test('e + 2')
+    test("""1.65734 +
+            3.00001 /
+            4.4335 - 9.6534 * (3 - 2.12) -
+            (123.111233 + 224.11 * ((32.23 / 12.342) / 234))
          """)
     print()
     count = status['OK'] + status['FAIL']
     print(("Status: OK = %.2f %%, FAIL = %.2f %%" %
-          (status['OK']*100.00/count, status['FAIL']*100.00/count)))
+          (status['OK'] * 100.00 / count, status['FAIL'] * 100.00 / count)))
 
 if __name__ == "__main__":
     run()
