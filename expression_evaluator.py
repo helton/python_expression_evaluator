@@ -74,7 +74,8 @@ class EvalParser(object):
         print(separator)
 
     def evaluate(self, expression, variables=None, print_tokens=False):
-        self.variables.update(variables)
+        if variables:
+            self.variables.update(variables)
         self.lexer = EvalLexer(expression)
         if print_tokens:
             self.print_tokens()
@@ -144,59 +145,3 @@ class EvalParser(object):
         elif self.token_is('IDENTIFIER'):
             self.stack.append(float(self.variables[self.token.value]))
             self.match('IDENTIFIER')
-
-# ------------------------ Tests --------------------------------#
-
-status = {"OK": 0, "FAIL": 0}
-
-
-def python_eval(expression, variables):
-    variables.update({"pi": math.pi, "e": math.e})
-    expression = ''.join(expression.split())
-    if variables:
-        for key, value in variables.items():
-            expression = re.sub('\\b'+key+'\\b', str(value), expression)
-    return float(eval(expression))
-
-
-def test(expression, variables={}):
-    """
-        Test if expected value is equal to the evaluated value
-    """
-    parser = EvalParser()
-    returned = parser.evaluate(expression, variables, True)
-    expected = python_eval(expression, variables)
-    if returned == expected:
-        prefix = 'OK'
-    else:
-        prefix = 'FAIL'
-    print(('# Status: %4s\n- Expression: %s\n- Returned: %f\n- Expected: %f\n- Variables: %s' %
-          (prefix, expression, returned, expected, variables)))
-    print('-' * 100)
-    status[prefix] += 1
-
-
-def run():
-    print("Checking expressions...\n")
-    test('123 + 987  * 230984 / (1 + 2)')
-    test('8 / 3 * 2')
-    test('2 + (((3 - 2)) * 7)')
-    test('6 / (2 - 4 * 2) / 12 + 5 - ((0)-1)')
-    test('9 * 3 / 5213 / 2134 - 29837 - (23-897 / (324+32 - (2972/9724) + 3) - 87)')
-    test('1.29837643298+ 2.12332 - (2 + 2)')
-    test('A + B / 2 - 9 * A + 14.23984 * B', {"A": 9, "B": 10})
-    test('a12C + e * 2  - b435 / pi - 9 * e - cde + 14 * fg123', {"a12C": 19.23, "b435": 29.123, "cde": -902.12, "fg123": 82.482})
-    test('92837 + 23e84 - 349.12 - (1 + 2.5)')
-    test('e + 2')
-    test("""1.65734 +
-            3.00001 /
-            4.4335 - 9.6534 * (3 - 2.12) -
-            (123.111233 + 224.11 * ((32.23 / 12.342) / 234))
-         """)
-    print()
-    count = status['OK'] + status['FAIL']
-    print(("Status: OK = %.2f %%, FAIL = %.2f %%" %
-          (status['OK'] * 100.00 / count, status['FAIL'] * 100.00 / count)))
-
-if __name__ == "__main__":
-    run()
